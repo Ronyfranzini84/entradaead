@@ -1,0 +1,16 @@
+.venv/
+venv/
+__pucache__/
+*.pyc
+.env
+.vscode/
+.idea/
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
