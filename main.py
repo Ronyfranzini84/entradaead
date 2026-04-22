@@ -5,7 +5,6 @@ import pcomm
 from ui_main import Ui_EntradaEAD
 import sys
 
-
 class AutomacaoWorker(QObject):
     finalizado = Signal(list)
     erro = Signal(str)
@@ -113,7 +112,7 @@ class MainWindow(QMainWindow):
         self.ui.btn_iniciar.setText("PARANDO...")
 
     def on_automacao_finalizada(self, registros):
-        QMessageBox.information(self, "Concluido", f"Automacao finalizada. Registros: {len(registros)}")
+        QMessageBox.information(self, "Concluido", f"Automacao finalizada. {len(registros)} Entradas.")
 
     def on_automacao_erro(self, mensagem):
         if self.parando and "interrompida" in mensagem.lower():

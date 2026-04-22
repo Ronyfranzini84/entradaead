@@ -161,61 +161,59 @@ def iniciar_pcomm(empresa, filial, tipo_atividade, matricula, senha, should_stop
 
         pcomm.send_keys(senha)
 
-        for nota in notas:
+        for indice, nota in enumerate(notas, start=1):
             check_stop()
             empr = nota["empr"]
             fil = nota["fil"]
             numero = nota["numero"]
             carga = nota["carga"]
 
-            
-        empr_inicial = pcomm.get_text(9, 20, 3).strip().upper()
+            print(f"Processando nota {indice}/{len(notas)}: EMP={empr} FIL={fil} NF={numero} CARGA={carga}")
 
-        tentativas = 0
-        MAX_TENTATIVAS = 10
+            concluida = False
+            for tentativa in range(1, 6):
+                check_stop()
 
-        while True:
-            check_stop()
+                # Limpa campos antes de preencher para evitar resquicio de valor anterior.
+                pcomm.send_keys("[PA1]")
+                time.sleep(0.3)
 
-            # 🔹 Preenche dados
-            pcomm.send_keys(empr, 9, 20)
-            pcomm.send_keys(fil, 9, 23)
-            pcomm.send_keys(numero, 9, 31)
-            pcomm.send_keys(carga, 9, 46)
-            pcomm.send_keys("[enter]")
+                pcomm.send_keys(str(empr), 9, 20)
+                pcomm.send_keys(str(fil), 9, 23)
+                pcomm.send_keys(str(numero), 9, 31)
+                pcomm.send_keys(str(carga), 9, 46)
+                pcomm.send_keys("[enter]")
+                time.sleep(0.7)
 
-            time.sleep(0.7)
+                rodape = pcomm.get_text(24, 7, 17).strip().upper()
+              
 
-            # 🔹 ENTER para limpar/avançar
-            pcomm.send_keys("[enter]")
-            time.sleep(0.7)
+                if "CAMPO OBRIGATORIO" in rodape:
+                    print(f"NF {numero}: pedido de senha (tentativa {tentativa}).")
+                    pcomm.send_keys(str(senha), 4, 69)
+                    pcomm.send_keys("[enter]")
+                    time.sleep(0.7)
+                    continue
 
-            novo_valor = pcomm.get_text(9, 20, 3).strip().upper()
+                if "JA FOI DADO ENTRADA" in rodape:
+                    print(f"NF {numero}: ja possui entrada. Indo para a proxima.")
+                    concluida = True
+                    break
 
-            # ✅ Se mudou → sucesso
-            if novo_valor != empr_inicial:
-                print("Mudou de tela, seguindo fluxo...")
+                if "ERRO" in rodape:
+                    print(f"NF {numero}: erro de tela na tentativa {tentativa}: {rodape}")
+                    continue
+
+                print(f"NF {numero}: processada (tentativa {tentativa}).")
+                concluida = True
                 break
 
-            # 🔴 Se não mudou → pode ser senha OU erro
-            print("Tela não mudou... verificando senha")
-
-            # 🔍 Verifica se campo de senha está ativo (posição típica)
-            campo_senha = pcomm.get_text(4, 69, 10).strip()
-
-            if campo_senha == "":
-                print("Digitando senha...")
-                pcomm.send_keys(senha, 4, 69)
-                pcomm.send_keys("[enter]")
-                time.sleep(1)
+            if not concluida:
+                print(f"NF {numero}: nao concluiu apos 5 tentativas. Seguindo fluxo.")
             else:
-                print("Nao parece tela de senha, tentando novamente...")
+                sair_pcomm(pcomm)
 
-            tentativas += 1
-
-            # 🔒 Proteção contra loop infinito
-            if tentativas >= MAX_TENTATIVAS:
-                raise Exception("Loop excedeu tentativas - possível erro de tela")
+        return dados_execucoes
     except Exception:
         raise
     finally:
