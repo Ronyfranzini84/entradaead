@@ -4,10 +4,13 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 import pcomm
 from ui_main import Ui_EntradaEAD
 import sys
+import icons_qrc
+
 
 class AutomacaoWorker(QObject):
     finalizado = Signal(list)
     erro = Signal(str)
+    status = Signal(str)
 
     def __init__(self, empresa, filial, tipo, matricula, senha):
         super().__init__()
@@ -24,6 +27,9 @@ class AutomacaoWorker(QObject):
     def deve_parar(self):
         return self._cancelado
 
+    def atualizar_status(self, mensagem):
+        self.status.emit(mensagem)
+
     def run(self):
         try:
             registros = pcomm.iniciar_pcomm(
@@ -33,6 +39,7 @@ class AutomacaoWorker(QObject):
                 self.matricula,
                 self.senha,
                 should_stop=self.deve_parar,
+                on_status=self.atualizar_status,
             )
             self.finalizado.emit(registros)
         except Exception as exc:
@@ -96,6 +103,7 @@ class MainWindow(QMainWindow):
         self.worker_thread.started.connect(self.worker.run)
         self.worker.finalizado.connect(self.on_automacao_finalizada)
         self.worker.erro.connect(self.on_automacao_erro)
+        self.worker.status.connect(self.on_status_atualizado)
         self.worker.finalizado.connect(self.worker_thread.quit)
         self.worker.erro.connect(self.worker_thread.quit)
         self.worker_thread.finished.connect(self.limpar_thread)
@@ -110,6 +118,10 @@ class MainWindow(QMainWindow):
         self.worker.cancelar()
         self.ui.btn_iniciar.setEnabled(False)
         self.ui.btn_iniciar.setText("PARANDO...")
+        self.ui.btn_iniciar.setToolTip("Aguardando o PCOMM concluir a etapa atual.")
+
+    def on_status_atualizado(self, mensagem):
+        self.ui.btn_iniciar.setToolTip(mensagem)
 
     def on_automacao_finalizada(self, registros):
         QMessageBox.information(self, "Concluido", f"Automacao finalizada. {len(registros)} Entradas.")
@@ -133,6 +145,7 @@ class MainWindow(QMainWindow):
         self.parando = False
         self.ui.btn_iniciar.setEnabled(True)
         self.ui.btn_iniciar.setText("INICIAR")
+        self.ui.btn_iniciar.setToolTip("")
 
 
 if __name__ == "__main__":

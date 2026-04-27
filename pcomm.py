@@ -27,18 +27,45 @@ class PCOMAutomation:
 
     def get_text(self, linha, coluna, tamanho):
         return self.sessao.GetText(linha, coluna, tamanho).strip()
+
+
+def pause(seconds, should_stop=None, step=0.1):
+    if should_stop is None:
+        time.sleep(seconds)
+        return
+
+    fim = time.perf_counter() + seconds
+    while True:
+        if should_stop():
+            raise RuntimeError("Automacao interrompida pelo usuario.")
+
+        restante = fim - time.perf_counter()
+        if restante <= 0:
+            return
+
+        time.sleep(min(step, restante))
+
+
+def enviar_com_cancelamento(pcomm, valor, should_stop=None, linha=None, coluna=None):
+    if should_stop and should_stop():
+        raise RuntimeError("Automacao interrompida pelo usuario.")
+
+    pcomm.send_keys(valor, linha=linha, coluna=coluna)
+
+    if should_stop and should_stop():
+        raise RuntimeError("Automacao interrompida pelo usuario.")
     
-def sair_pcomm(pcomm):
-    pcomm.send_keys("[PF9]")
-    pcomm.send_keys("DISC")
-    pcomm.send_keys("[ENTER]")
+def sair_pcomm(pcomm, should_stop=None):
+    enviar_com_cancelamento(pcomm, "[PF9]", should_stop=should_stop)
+    enviar_com_cancelamento(pcomm, "DISC", should_stop=should_stop)
+    enviar_com_cancelamento(pcomm, "[ENTER]", should_stop=should_stop)
 
 def extrair_notas(pcomm):
     lista = []
 
     # linhas onde comecam os dados (ajuste conforme necessario)
     for linha in range(9, 23):
-        numero = pcomm.get_text(linha, 18, 8).strip()
+        numero = pcomm.get_text(linha, 17, 10).strip()
 
         # se nao tem numero, acabou a lista
         if not numero:
@@ -55,35 +82,43 @@ def extrair_notas(pcomm):
 
     return lista
 
-def voltar_tela(pcomm, vezes=2):
+def voltar_tela(pcomm, vezes=2, should_stop=None):
     for _ in range(vezes):
-        pcomm.send_keys("[PF3]")
-        time.sleep(0.5)    
+        enviar_com_cancelamento(pcomm, "[PF3]", should_stop=should_stop)
+        pause(0.5, should_stop=should_stop)
 
-def iniciar_pcomm(empresa, filial, tipo_atividade, matricula, senha, should_stop=None):
+def iniciar_pcomm(empresa, filial, tipo_atividade, matricula, senha, should_stop=None, on_status=None):
     if should_stop is None:
         should_stop = lambda: False
+
+    if on_status is None:
+        on_status = lambda mensagem: None
 
     def check_stop():
         if should_stop():
             raise RuntimeError("Automacao interrompida pelo usuario.")
 
+    def report_status(mensagem):
+        on_status(mensagem)
+
     pythoncom.CoInitialize()
     pcomm = None
     try:
+        report_status("Conectando ao PCOMM...")
         pcomm = PCOMAutomation()
         dados_execucoes = []
 
         check_stop()
-        pcomm.send_keys("[enter]")
+        enviar_com_cancelamento(pcomm, "[enter]", should_stop=should_stop)
 
         tela_conectada = False
         for tela in [1, 2, 3]:
             check_stop()
             try:
-                pcomm.send_keys(str(tela))
-                pcomm.send_keys("[enter]")
-                time.sleep(2)
+                report_status(f"Tentando conectar na tela {tela}...")
+                enviar_com_cancelamento(pcomm, str(tela), should_stop=should_stop)
+                enviar_com_cancelamento(pcomm, "[enter]", should_stop=should_stop)
+                pause(2, should_stop=should_stop)
                 # Varre as linhas 18 a 24 onde o erro EMS aparece na tela ZOS
                 tela_inteira = " ".join(
                     pcomm.get_text(linha, 1, 80).upper() for linha in range(18, 25)
@@ -95,71 +130,74 @@ def iniciar_pcomm(empresa, filial, tipo_atividade, matricula, senha, should_stop
                     break
                 else:
                     print(f"Tela {tela} falhou, tentando proxima...")
-                    pcomm.send_keys("[PF9]")
-                    time.sleep(1)
+                    enviar_com_cancelamento(pcomm, "[PF9]", should_stop=should_stop)
+                    pause(1, should_stop=should_stop)
             except Exception as e:
                 print(f"Tela {tela} erro exception: {e}")
-                pcomm.send_keys("[PF9]")
-                time.sleep(1)
+                enviar_com_cancelamento(pcomm, "[PF9]", should_stop=should_stop)
+                pause(1, should_stop=should_stop)
 
         if not tela_conectada:
             raise ConnectionError("Nao foi possivel conectar em nenhuma tela do PCOMM.")
 
         check_stop()
-        pcomm.send_keys("S6CA")
-        pcomm.send_keys("[enter]")
+        report_status("Abrindo rotina S6CA...")
+        enviar_com_cancelamento(pcomm, "S6CA", should_stop=should_stop)
+        enviar_com_cancelamento(pcomm, "[enter]", should_stop=should_stop)
 
-        time.sleep(1)
+        pause(1, should_stop=should_stop)
 
-        pcomm.send_keys(empresa)
-        pcomm.send_keys(filial)
-        pcomm.send_keys(tipo_atividade)
-        pcomm.send_keys(6)
-        pcomm.send_keys("[enter]")
+        report_status("Preenchendo filtros iniciais...")
+        enviar_com_cancelamento(pcomm, empresa, should_stop=should_stop)
+        enviar_com_cancelamento(pcomm, filial, should_stop=should_stop)
+        enviar_com_cancelamento(pcomm, tipo_atividade, should_stop=should_stop)
+        enviar_com_cancelamento(pcomm, 6, should_stop=should_stop)
+        enviar_com_cancelamento(pcomm, "[enter]", should_stop=should_stop)
 
         if len(matricula) != 10:
-            pcomm.send_keys(matricula)
-            pcomm.send_keys("[tab]")
+            enviar_com_cancelamento(pcomm, matricula, should_stop=should_stop)
+            enviar_com_cancelamento(pcomm, "[tab]", should_stop=should_stop)
         else:
-            pcomm.send_keys(matricula)
+            enviar_com_cancelamento(pcomm, matricula, should_stop=should_stop)
 
         if len(senha) != 10:
-            pcomm.send_keys(senha)
-            pcomm.send_keys("[tab]")
+            enviar_com_cancelamento(pcomm, senha, should_stop=should_stop)
+            enviar_com_cancelamento(pcomm, "[tab]", should_stop=should_stop)
         else:
-            pcomm.send_keys(senha)
+            enviar_com_cancelamento(pcomm, senha, should_stop=should_stop)
 
-        pcomm.send_keys(4)
-        pcomm.send_keys(1)
-        pcomm.send_keys("[enter]")
+        enviar_com_cancelamento(pcomm, 4, should_stop=should_stop)
+        enviar_com_cancelamento(pcomm, 1, should_stop=should_stop)
+        enviar_com_cancelamento(pcomm, "[enter]", should_stop=should_stop)
 
-        pcomm.send_keys(4)
-        pcomm.send_keys("[enter]")
+        enviar_com_cancelamento(pcomm, 4, should_stop=should_stop)
+        enviar_com_cancelamento(pcomm, "[enter]", should_stop=should_stop)
 
-        time.sleep(1)
+        pause(1, should_stop=should_stop)
         check_stop()
         rodape = pcomm.get_text(24, 8, 50).strip().upper()
 
         if "NAO ENCONTRADO NOTAS FISCAIS SEM DAR ENTRADA" in rodape:
-            sair_pcomm(pcomm)
+            sair_pcomm(pcomm, should_stop=should_stop)
             return dados_execucoes
 
+        report_status("Lendo notas pendentes...")
         notas = extrair_notas(pcomm)
         dados_execucoes.extend(notas)
 
         # Continua o fluxo do app para processar cada nota na tela seguinte.
-        voltar_tela(pcomm, vezes=2)
+        voltar_tela(pcomm, vezes=2, should_stop=should_stop)
 
-        pcomm.send_keys(senha)
+        enviar_com_cancelamento(pcomm, senha, should_stop=should_stop)
 
-        pcomm.send_keys(4, 6, 26)
-        pcomm.send_keys(2)
-        pcomm.send_keys("[enter]")
+        enviar_com_cancelamento(pcomm, 4, should_stop=should_stop, linha=6, coluna=26)
+        enviar_com_cancelamento(pcomm, 2, should_stop=should_stop)
+        enviar_com_cancelamento(pcomm, "[enter]", should_stop=should_stop)
 
-        pcomm.send_keys(3)
-        pcomm.send_keys("[enter]")
+        enviar_com_cancelamento(pcomm, 3, should_stop=should_stop)
+        enviar_com_cancelamento(pcomm, "[enter]", should_stop=should_stop)
 
-        pcomm.send_keys(senha)
+        enviar_com_cancelamento(pcomm, senha, should_stop=should_stop)
 
         for indice, nota in enumerate(notas, start=1):
             check_stop()
@@ -168,50 +206,46 @@ def iniciar_pcomm(empresa, filial, tipo_atividade, matricula, senha, should_stop
             numero = nota["numero"]
             carga = nota["carga"]
 
+            report_status(f"Processando nota {indice} de {len(notas)}...")
+
             print(f"Processando nota {indice}/{len(notas)}: EMP={empr} FIL={fil} NF={numero} CARGA={carga}")
 
             concluida = False
-            for tentativa in range(1, 6):
+            for tentativa in range(1, 3):
                 check_stop()
 
                 # Limpa campos antes de preencher para evitar resquicio de valor anterior.
-                pcomm.send_keys("[PA1]")
-                time.sleep(0.3)
+                enviar_com_cancelamento(pcomm, "[PA1]", should_stop=should_stop)
+                pause(0.3, should_stop=should_stop)
 
-                pcomm.send_keys(str(empr), 9, 20)
-                pcomm.send_keys(str(fil), 9, 23)
-                pcomm.send_keys(str(numero), 9, 31)
-                pcomm.send_keys(str(carga), 9, 46)
-                pcomm.send_keys("[enter]")
-                time.sleep(0.7)
+                enviar_com_cancelamento(pcomm, str(empr), should_stop=should_stop, linha=9, coluna=20)
+                enviar_com_cancelamento(pcomm, str(fil), should_stop=should_stop, linha=9, coluna=23)
+                enviar_com_cancelamento(pcomm, str(numero), should_stop=should_stop, linha=9, coluna=31)
+                enviar_com_cancelamento(pcomm, str(carga), should_stop=should_stop, linha=9, coluna=46)
+                enviar_com_cancelamento(pcomm, "[enter]", should_stop=should_stop)
+                pause(0.7, should_stop=should_stop)
 
                 rodape = pcomm.get_text(24, 7, 17).strip().upper()
               
 
                 if "CAMPO OBRIGATORIO" in rodape:
                     print(f"NF {numero}: pedido de senha (tentativa {tentativa}).")
-                    pcomm.send_keys(str(senha), 4, 69)
-                    pcomm.send_keys("[enter]")
-                    time.sleep(0.7)
+                    enviar_com_cancelamento(pcomm, str(senha), should_stop=should_stop, linha=4, coluna=69)
+                    enviar_com_cancelamento(pcomm, "[enter]", should_stop=should_stop)
+                    pause(0.7, should_stop=should_stop)
                     continue
 
-                if "JA FOI DADO ENTRADA" in rodape:
+                if "OPERACAO EFETUADA" in rodape:
+                    enviar_com_cancelamento(pcomm, "[enter]", should_stop=should_stop)
                     print(f"NF {numero}: ja possui entrada. Indo para a proxima.")
                     concluida = True
                     break
 
-                if "ERRO" in rodape:
-                    print(f"NF {numero}: erro de tela na tentativa {tentativa}: {rodape}")
-                    continue
-
-                print(f"NF {numero}: processada (tentativa {tentativa}).")
-                concluida = True
-                break
-
+                
             if not concluida:
-                print(f"NF {numero}: nao concluiu apos 5 tentativas. Seguindo fluxo.")
-            else:
-                sair_pcomm(pcomm)
+                print(f"NF {numero}: nao concluiu apos 2 tentativas. Seguindo fluxo.")
+
+        sair_pcomm(pcomm, should_stop=should_stop)
 
         return dados_execucoes
     except Exception:
