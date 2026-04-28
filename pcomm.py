@@ -1,10 +1,13 @@
 import time
 import unicodedata
+from pathlib import Path
+import sys
 import pandas as pd
 import requests
 import win32com.client
 import pythoncom
 import openpyxl
+import pyautogui
 
 class PCOMAutomation:
     def __init__(self, sessao_nome="A"):
@@ -62,7 +65,8 @@ def sair_pcomm(pcomm, should_stop=None):
 
 def extrair_notas(pcomm):
     lista = []
-
+    # tira print da tela inteira
+    
     # linhas onde comecam os dados (ajuste conforme necessario)
     for linha in range(9, 23):
         numero = pcomm.get_text(linha, 17, 10).strip()
@@ -86,6 +90,19 @@ def voltar_tela(pcomm, vezes=2, should_stop=None):
     for _ in range(vezes):
         enviar_com_cancelamento(pcomm, "[PF3]", should_stop=should_stop)
         pause(0.5, should_stop=should_stop)
+
+
+def obter_pasta_app():
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+
+    return Path(__file__).resolve().parent
+
+
+def obter_pasta_prints():
+    pasta_prints = Path.home() / "Downloads" / "EntradaEAD"
+    pasta_prints.mkdir(parents=True, exist_ok=True)
+    return pasta_prints
 
 def iniciar_pcomm(empresa, filial, tipo_atividade, matricula, senha, should_stop=None, on_status=None):
     if should_stop is None:
@@ -176,6 +193,10 @@ def iniciar_pcomm(empresa, filial, tipo_atividade, matricula, senha, should_stop
         pause(1, should_stop=should_stop)
         check_stop()
         rodape = pcomm.get_text(24, 8, 50).strip().upper()
+        screenshot = pyautogui.screenshot()
+        caminho_print = obter_pasta_prints() / "print.png"
+        screenshot.save(caminho_print)
+        report_status(f"Print salvo em: {caminho_print}")
 
         if "NAO ENCONTRADO NOTAS FISCAIS SEM DAR ENTRADA" in rodape:
             sair_pcomm(pcomm, should_stop=should_stop)
@@ -183,6 +204,7 @@ def iniciar_pcomm(empresa, filial, tipo_atividade, matricula, senha, should_stop
 
         report_status("Lendo notas pendentes...")
         notas = extrair_notas(pcomm)
+        
         dados_execucoes.extend(notas)
 
         # Continua o fluxo do app para processar cada nota na tela seguinte.
